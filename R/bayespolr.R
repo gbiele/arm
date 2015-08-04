@@ -233,7 +233,34 @@ function (formula, data, weights, start, ..., subset, na.action,
     wt <- c (wt.0, prior.counts.for.bins)
     offset <- c (offset, rep(0,q+1))
 # Fit the model as before
-    res <- optim(start, fmin, gmin, method = "BFGS", hessian = Hess, ...)
+    #res <- optim(start, fmin, gmin, method = "BFGS", hessian = Hess, ...)
+    # modify original code to deal with problematic starting values
+    res = tryCatch(
+    {optim(start, fmin, gmin, method = "BFGS", hessian = Hess, ...)},
+    error=function(cond) {
+      #message("#### Problematic default bayespolr starting values, set very large values to zero ####")
+      #message(paste("Original error message is:",cond))
+      
+      startx = start
+      maxX = apply(X,2,function(x) max(x,na.rm = T))
+      startx[abs(maxX*start[1:length(maxX)]) > 5] = 0
+      return(
+        tryCatch(
+          {list(optim(startx, fmin, gmin, method = "BFGS", hessian = Hess, ...),"set some starting values to zero")},
+          error = function(cond){
+            #message("#### Problem with modified starting values, set all starting values to zero ####")
+            startx[1:length(maxX)] = 0
+            return(list(optim(startx, fmin, gmin, method = "BFGS", hessian = Hess, ...),"set some starting values to zero"))
+          }
+        )
+      )
+    })
+    if (length(res) == 2){
+      my_warning = res[[2]]
+      res = res[[1]]
+    } else {
+      my_warning = F
+    }
 # Restore the old variables
     y <- y.0
     Y <- Y.0
@@ -277,6 +304,7 @@ function (formula, data, weights, start, ..., subset, na.action,
     fit$na.action <- attr(m, "na.action")
     fit$contrasts <- cons
     fit$xlevels <- .getXlevels(Terms, m)
+    if(!is.logical(my_warning)) fit$my_warning = my_warning
     class(fit) <- c("bayespolr", "polr")
     fit
 }
